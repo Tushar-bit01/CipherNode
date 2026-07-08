@@ -1,0 +1,3 @@
+/Users/tushar/Documents/CipherNode/build/CMakeFiles/engine_test.dir
+/Users/tushar/Documents/CipherNode/build/CMakeFiles/edit_cache.dir
+/Users/tushar/Documents/CipherNode/build/CMakeFiles/rebuild_cache.dir
