@@ -1,7 +1,7 @@
 #include<iostream>
 #include "../include/binary_record.h"
+#include "../include/binary_storage.h"
 
-void writeRecord(const std::string &filename,const std::string &key,const std::string &value);
 int main(){
     std::string db_file="tusu.db";
     writeRecord(db_file,"Tushar","C++ Developer");
