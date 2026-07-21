@@ -2,10 +2,22 @@
 #include<fstream>
 #include<iostream>
 
-TusuEngine::TusuEngine(const std::string &filename):db_file(filename){};
+TusuEngine::TusuEngine(const std::string &filename):db_file(filename){
+    std::ifstream infile(db_file,std::ios::binary);
+    if(!infile.is_open()) return;
+    RecordHeader header;
+    while(true){
+        uint64_t current_offset = infile.tellg();
+        if(!infile.read(reinterpret_cast<char*> (&header),sizeof(RecordHeader))) break;
+        std::string key(header.keySize,'\0');
+        infile.read(&key[0],header.keySize);
+        infile.seekg(header.valueSize, std::ios::cur);
+        memtable[key]=current_offset;
+    }
+};
 
 void TusuEngine::put(const std::string &key, const std::string &value){
-    int offset=writeRecord(db_file,key,value);
+    uint64_t offset=writeRecord(db_file,key,value);
     memtable[key]=offset;
 }
 
