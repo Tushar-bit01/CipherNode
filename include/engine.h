@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include "binary_storage.h"
+#include "binary_record.h"
 
 class TusuEngine {
 private:
