@@ -1,11 +1,12 @@
 #ifndef BINARY_RECORD_H
 #define BINARY_RECORD_H
 
-#include<cstdint>
-//memory layout control
-#pragma pack(push,1)
+#include <cstdint>
+// memory layout control
+#pragma pack(push, 1)
 
-struct RecordHeader{
+struct RecordHeader
+{
     uint32_t keySize;
     uint32_t valueSize;
 };

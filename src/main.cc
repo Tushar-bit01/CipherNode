@@ -1,8 +1,9 @@
 #include <iostream>
 #include "engine.h"
 
-int main() {
-    // This triggers your recovery constructor! 
+int main()
+{
+    // This triggers your recovery constructor!
     // It should scan tusu.db and rebuild the memtable in RAM automatically.
     TusuEngine db("tusu.db");
 
