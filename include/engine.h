@@ -2,6 +2,7 @@
 #define ENGINE_H
 
 #include <unordered_map>
+#include <vector>
 #include <string>
 #include "binary_storage.h"
 #include "binary_record.h"
