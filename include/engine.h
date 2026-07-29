@@ -6,6 +6,7 @@
 #include <string>
 #include "binary_storage.h"
 #include "binary_record.h"
+#include "sstable.h"
 
 class TusuEngine
 {

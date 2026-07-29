@@ -42,31 +42,36 @@ void TusuEngine::put(const std::string &key, const std::string &value)
 {
     uint64_t offset = writeRecord(db_file, key, value);
     memtable[key] = offset;
-    if (memtable.size() > 1000)
+    if (memtable.size() > 3)
         flush();
 }
 
 std::string TusuEngine::get(const std::string &key)
 {
-    if (memtable.find(key) == memtable.end())
+    if (memtable.find(key) != memtable.end())
     {
-        return "NOT FOUND";
+        uint64_t offset = memtable[key];
+        std::ifstream infile(db_file, std::ios::binary);
+        if (!infile.is_open())
+            return "FILE ERROR";
+        
+        infile.seekg(offset);
+        RecordHeader header;
+        infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
+        infile.seekg(header.keySize, std::ios::cur);
+        
+        std::string value(header.valueSize, '\0');
+        infile.read(&value[0], header.valueSize);
+        return value;
     }
-    auto it = memtable.find(key);
-    uint64_t offset = it->second;
 
-    std::ifstream infile(db_file, std::ios::binary);
-    if (!infile.is_open())
-        return "FILE ERROR";
-    infile.seekg(offset);
+    // 2. Fall back to SSTables (disk search path)
+    std::string sst_result = getSStable(sstable_files, key);
+    if (sst_result != "NOT FOUND")
+    {
+        return sst_result;
+    }
 
-    RecordHeader header;
-    infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
-    // skip keysize bytes
-    infile.seekg(header.keySize, std::ios::cur);
-    // make buffer of size value
-    std::string value(header.valueSize, '\0');
-    infile.read(&value[0], header.valueSize);
-
-    return value;
+    // 3. Not found anywhere
+    return "NOT FOUND";
 }
