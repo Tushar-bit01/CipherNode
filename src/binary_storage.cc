@@ -18,3 +18,22 @@ uint64_t writeRecord(const std::string &filename,const std::string &key,const st
         outfile.close();
         return offset;
 }
+
+uint64_t writeTombstoneRecord(const std::string &filename, const std::string &key)
+{
+    std::ofstream outfile(filename, std::ios::binary | std::ios::app);
+    if (!outfile.is_open())
+        return 0;
+
+    uint64_t offset = outfile.tellp();
+
+    RecordHeader header;
+    header.is_tombstone = 1; // Mark as tombstone
+    header.keySize = static_cast<uint32_t>(key.size());
+    header.valueSize = 0;    // Deletions have no value payload
+
+    outfile.write(reinterpret_cast<const char *>(&header), sizeof(RecordHeader));
+    outfile.write(key.data(), key.size());
+
+    return offset;
+}

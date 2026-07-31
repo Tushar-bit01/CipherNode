@@ -46,6 +46,14 @@ void TusuEngine::put(const std::string &key, const std::string &value)
         flush();
 }
 
+void TusuEngine::remove(const std::string &key)
+{
+    uint64_t offset = writeTombstoneRecord(db_file, key);
+    memtable[key] = offset;
+    if (memtable.size() > 3)
+        flush();
+}
+
 std::string TusuEngine::get(const std::string &key)
 {
     if (memtable.find(key) != memtable.end())
@@ -58,11 +66,15 @@ std::string TusuEngine::get(const std::string &key)
         infile.seekg(offset);
         RecordHeader header;
         infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
-        infile.seekg(header.keySize, std::ios::cur);
+        if(header.is_tombstone!=1){
+            infile.seekg(header.keySize, std::ios::cur);
         
-        std::string value(header.valueSize, '\0');
-        infile.read(&value[0], header.valueSize);
-        return value;
+            std::string value(header.valueSize, '\0');
+            infile.read(&value[0], header.valueSize);
+            return value;
+        }
+
+        return "NOT FOUND";
     }
 
     // 2. Fall back to SSTables (disk search path)

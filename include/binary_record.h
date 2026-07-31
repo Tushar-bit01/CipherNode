@@ -7,6 +7,7 @@
 
 struct RecordHeader
 {
+    uint8_t is_tombstone;
     uint32_t keySize;
     uint32_t valueSize;
 };

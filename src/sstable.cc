@@ -116,7 +116,9 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
             file.seekg(found_offset);
             RecordHeader header;
             file.read(reinterpret_cast<char*>(&header), sizeof(RecordHeader));
-            
+            if(header.is_tombstone==1){
+                return "NOT FOUND";
+            }
             // Skip past the key to reach the value
             file.seekg(header.keySize, std::ios::cur);
 

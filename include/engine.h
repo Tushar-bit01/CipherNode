@@ -20,6 +20,7 @@ private:
 public:
     TusuEngine(const std::string &filename);
     void put(const std::string &key, const std::string &value);
+    void remove(const std::string &key);
     std::string get(const std::string &key);
 };
 
