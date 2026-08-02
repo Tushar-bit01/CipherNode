@@ -36,6 +36,7 @@ void TusuEngine::flush()
     }
     std::sort(sorted_keys.begin(), sorted_keys.end());
     writeSStable(sorted_keys, flushing_map,sstable_files);
+    checkAndCompactSSTables(sstable_files);
 }
 
 void TusuEngine::put(const std::string &key, const std::string &value)

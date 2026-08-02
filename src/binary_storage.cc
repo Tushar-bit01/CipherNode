@@ -9,7 +9,7 @@ uint64_t writeRecord(const std::string &filename,const std::string &key,const st
             return 0;
         }
         uint64_t offset=outfile.tellp();
-        RecordHeader header;
+        RecordHeader header{};
         header.keySize=static_cast<uint32_t>(key.size());
         header.valueSize=static_cast<uint32_t>(value.size());
         outfile.write(reinterpret_cast<const char*>(&header),sizeof(RecordHeader));
@@ -34,6 +34,6 @@ uint64_t writeTombstoneRecord(const std::string &filename, const std::string &ke
 
     outfile.write(reinterpret_cast<const char *>(&header), sizeof(RecordHeader));
     outfile.write(key.data(), key.size());
-
+    outfile.close();
     return offset;
 }

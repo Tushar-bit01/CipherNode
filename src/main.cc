@@ -36,7 +36,6 @@ void runTests()
     db.put("cherry", "red");
     db.put("date", "brown"); // This 4th item should trigger flush()!
     
-    // Check if previous keys still accessible via SSTable fallback
     assert(db.get("apple") == "green");
     assert(db.get("banana") == "yellow");
     assert(db.get("cherry") == "red");
@@ -50,7 +49,6 @@ void runTests()
     db.remove("banana");
     
     assert(db.get("banana") == "NOT FOUND");
-    // Ensure deleting one key didn't break others
     assert(db.get("apple") == "green"); 
     std::cout << "[PASS] Tombstone deletion works perfectly!\n";
 
@@ -63,15 +61,48 @@ void runTests()
     std::cout << "[PASS] Resurrection of deleted key works!\n";
 
     // -------------------------------------------------------------
-    // Test 6: Persistence / Recovery from WAL on Restart
+    // Test 6: Compaction Trigger Test (>= 4 SSTable files)
     // -------------------------------------------------------------
-    std::cout << "\n--- Test 6: Recovery Test (Restarting Engine) ---\n";
+    std::cout << "\n--- Test 6: Compaction & Tombstone Garbage Collection ---\n";
+    // Let's force multiple flushes to accumulate >= 4 SSTable files
+    // Flush 2
+    db.put("grape", "purple");
+    db.put("fig", "brown");
+    db.put("kiwi", "green");
+    db.put("lemon", "yellow"); 
+
+    // Flush 3
+    db.put("mango", "orange");
+    db.put("nectarine", "pink");
+    db.put("orange", "orange");
+    db.put("papaya", "green"); 
+
+    // Flush 4 (This should cross the threshold of 4 SSTable files and trigger compaction!)
+    db.put("quince", "yellow");
+    db.put("raspberry", "red");
+    db.put("strawberry", "red");
+    db.put("tomato", "red"); 
+
+    // Verify all existing keys can still be fetched post-compaction
+    std::cout << "[DEBUG] apple value is: '" << db.get("apple") << "'\n";
+    assert(db.get("apple") == "green");
+    assert(db.get("banana") == "sweet-yellow");
+    assert(db.get("cherry") == "red");
+    assert(db.get("date") == "brown");
+    assert(db.get("mango") == "orange");
+    assert(db.get("strawberry") == "red");
+    std::cout << "[PASS] Compaction executed and all data remains fully intact!\n";
+
+    // -------------------------------------------------------------
+    // Test 7: Persistence / Recovery from WAL on Restart
+    // -------------------------------------------------------------
+    std::cout << "\n--- Test 7: Recovery Test (Restarting Engine) ---\n";
     {
-        // Scope block forces destructor / closing
         TusuEngine db_restarted("tusu.db");
         assert(db_restarted.get("apple") == "green");
         assert(db_restarted.get("banana") == "sweet-yellow");
         assert(db_restarted.get("cherry") == "red");
+        assert(db_restarted.get("strawberry") == "red");
         assert(db_restarted.get("nonexistent") == "NOT FOUND");
         std::cout << "[PASS] WAL Recovery works on restart!\n";
     }

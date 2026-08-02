@@ -11,6 +11,7 @@ struct IndexEntry {
 };
 
 void writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string, uint64_t> &flushing_map,std::vector<std::string> &sstable_files);
+void checkAndCompactSSTables(std::vector<std::string> &sstable_files);
 std::string readSStable(std::string key, std::unordered_map<std::string, uint64_t> &flushing_map);
 std::string getSStable(std::vector<std::string> &sstable_files,const std::string &key);
 #endif
