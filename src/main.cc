@@ -2,118 +2,229 @@
 #include <cassert>
 #include "../include/engine.h"
 
-void runTests() 
+void runTests()
 {
-    // Clean start for test database
     system("rm -f tusu.db sstable_*.db");
 
-    std::cout << "[INFO] Initializing TusuEngine...\n";
+    std::cout << "[INFO] Starting TusuDB Tests\n";
+
     TusuEngine db("tusu.db");
 
-    // -------------------------------------------------------------
-    // Test 1: Basic Put and Get
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 1: Basic Put & Get ---\n";
-    db.put("apple", "red");
-    db.put("banana", "yellow");
+    //-------------------------------------------------
+    // Test 1
+    //-------------------------------------------------
 
-    assert(db.get("apple") == "red");
-    assert(db.get("banana") == "yellow");
-    std::cout << "[PASS] Basic Put & Get works!\n";
+    std::cout << "\n[TEST 1] Basic Put/Get\n";
 
-    // -------------------------------------------------------------
-    // Test 2: Updates (Overwriting keys)
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 2: Updates ---\n";
-    db.put("apple", "green"); // Update value
-    assert(db.get("apple") == "green");
-    std::cout << "[PASS] Updates work correctly!\n";
+    db.put("apple","red");
+    db.put("banana","yellow");
 
-    // -------------------------------------------------------------
-    // Test 3: Threshold Flush to SSTable (> 3 items triggers flush)
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 3: MemTable Flush to SSTable ---\n";
-    db.put("cherry", "red");
-    db.put("date", "brown"); // This 4th item should trigger flush()!
-    
-    assert(db.get("apple") == "green");
-    assert(db.get("banana") == "yellow");
-    assert(db.get("cherry") == "red");
-    assert(db.get("date") == "brown");
-    std::cout << "[PASS] Flushes and SSTable lookups work!\n";
+    assert(db.get("apple")=="red");
+    assert(db.get("banana")=="yellow");
 
-    // -------------------------------------------------------------
-    // Test 4: Tombstones & Deletions
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 4: Deletions (Tombstones) ---\n";
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 2
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 2] Update Existing Key\n";
+
+    db.put("apple","green");
+
+    assert(db.get("apple")=="green");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 3
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 3] Delete Existing Key\n";
+
     db.remove("banana");
-    
-    assert(db.get("banana") == "NOT FOUND");
-    assert(db.get("apple") == "green"); 
-    std::cout << "[PASS] Tombstone deletion works perfectly!\n";
 
-    // -------------------------------------------------------------
-    // Test 5: Re-inserting a deleted key (Resurrection)
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 5: Re-inserting Deleted Key ---\n";
-    db.put("banana", "sweet-yellow"); // Bring it back
-    assert(db.get("banana") == "sweet-yellow");
-    std::cout << "[PASS] Resurrection of deleted key works!\n";
+    assert(db.get("banana")=="NOT FOUND");
 
-    // -------------------------------------------------------------
-    // Test 6: Compaction Trigger Test (>= 4 SSTable files)
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 6: Compaction & Tombstone Garbage Collection ---\n";
-    // Let's force multiple flushes to accumulate >= 4 SSTable files
-    // Flush 2
-    db.put("grape", "purple");
-    db.put("fig", "brown");
-    db.put("kiwi", "green");
-    db.put("lemon", "yellow"); 
+    std::cout<<"PASS\n";
 
-    // Flush 3
-    db.put("mango", "orange");
-    db.put("nectarine", "pink");
-    db.put("orange", "orange");
-    db.put("papaya", "green"); 
+    //-------------------------------------------------
+    // Test 4
+    //-------------------------------------------------
 
-    // Flush 4 (This should cross the threshold of 4 SSTable files and trigger compaction!)
-    db.put("quince", "yellow");
-    db.put("raspberry", "red");
-    db.put("strawberry", "red");
-    db.put("tomato", "red"); 
+    std::cout<<"\n[TEST 4] Delete Non Existing Key\n";
 
-    // Verify all existing keys can still be fetched post-compaction
-    std::cout << "[DEBUG] apple value is: '" << db.get("apple") << "'\n";
-    assert(db.get("apple") == "green");
-    assert(db.get("banana") == "sweet-yellow");
-    assert(db.get("cherry") == "red");
-    assert(db.get("date") == "brown");
-    assert(db.get("mango") == "orange");
-    assert(db.get("strawberry") == "red");
-    std::cout << "[PASS] Compaction executed and all data remains fully intact!\n";
+    db.remove("xyz");
 
-    // -------------------------------------------------------------
-    // Test 7: Persistence / Recovery from WAL on Restart
-    // -------------------------------------------------------------
-    std::cout << "\n--- Test 7: Recovery Test (Restarting Engine) ---\n";
+    assert(db.get("xyz")=="NOT FOUND");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 5
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 5] Resurrection\n";
+
+    db.put("banana","sweet-yellow");
+
+    assert(db.get("banana")=="sweet-yellow");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 6
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 6] Flush Trigger\n";
+
+    db.put("c","1");
+    db.put("d","2");
+    db.put("e","3");
+    db.put("f","4");
+
+    assert(db.get("apple")=="green");
+    assert(db.get("banana")=="sweet-yellow");
+    assert(db.get("c")=="1");
+    assert(db.get("d")=="2");
+    assert(db.get("e")=="3");
+    assert(db.get("f")=="4");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 7
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 7] Large Number of Flushes\n";
+
+    for(int i=0;i<30;i++)
     {
-        TusuEngine db_restarted("tusu.db");
-        assert(db_restarted.get("apple") == "green");
-        assert(db_restarted.get("banana") == "sweet-yellow");
-        assert(db_restarted.get("cherry") == "red");
-        assert(db_restarted.get("strawberry") == "red");
-        assert(db_restarted.get("nonexistent") == "NOT FOUND");
-        std::cout << "[PASS] WAL Recovery works on restart!\n";
+        db.put("key"+std::to_string(i),
+               "value"+std::to_string(i));
     }
 
-    std::cout << "\n========================================\n";
-    std::cout << "🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉\n";
-    std::cout << "========================================\n";
+    for(int i=0;i<30;i++)
+    {
+        assert(
+            db.get("key"+std::to_string(i))
+            ==
+            "value"+std::to_string(i)
+        );
+    }
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 8
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 8] Compaction\n";
+
+    db.put("apple","dark-green");
+
+    for(int i=30;i<60;i++)
+    {
+        db.put("key"+std::to_string(i),
+               "value"+std::to_string(i));
+    }
+
+    assert(db.get("apple")=="dark-green");
+
+    for(int i=0;i<60;i++)
+    {
+        assert(
+            db.get("key"+std::to_string(i))
+            ==
+            "value"+std::to_string(i)
+        );
+    }
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 9
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 9] Tombstone Garbage Collection\n";
+
+    db.put("ghost","alive");
+
+    db.remove("ghost");
+
+    for(int i=60;i<90;i++)
+    {
+        db.put("key"+std::to_string(i),
+               "value"+std::to_string(i));
+    }
+
+    assert(db.get("ghost")=="NOT FOUND");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 10
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 10] Restart Recovery\n";
+
+    {
+        TusuEngine restart("tusu.db");
+
+        assert(restart.get("apple")=="dark-green");
+
+        for(int i=0;i<90;i++)
+        {
+            assert(
+                restart.get("key"+std::to_string(i))
+                ==
+                "value"+std::to_string(i)
+            );
+        }
+
+        assert(restart.get("ghost")=="NOT FOUND");
+    }
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 11
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 11] Multiple Updates Across SSTables\n";
+
+    db.put("counter","1");
+
+    for(int i=0;i<8;i++)
+        db.put("dummy"+std::to_string(i),"x");
+
+    db.put("counter","2");
+
+    for(int i=8;i<16;i++)
+        db.put("dummy"+std::to_string(i),"x");
+
+    db.put("counter","3");
+
+    assert(db.get("counter")=="3");
+
+    std::cout<<"PASS\n";
+
+    //-------------------------------------------------
+    // Test 12
+    //-------------------------------------------------
+
+    std::cout<<"\n[TEST 12] Missing Key\n";
+
+    assert(db.get("i_do_not_exist")=="NOT FOUND");
+
+    std::cout<<"PASS\n";
+
+    std::cout<<"\n=========================================\n";
+    std::cout<<"ALL TESTS PASSED\n";
+    std::cout<<"=========================================\n";
 }
 
-int main() 
+int main()
 {
     runTests();
-    return 0;
 }
