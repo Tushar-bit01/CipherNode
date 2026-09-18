@@ -1,77 +1,118 @@
 #include "../include/sstable.h"
-#include "./binary_storage.h"
+#include "../include/binary_storage.h"
 #include <iostream>
+#include <algorithm>
 
-void checkAndCompactSSTables(std::vector<std::string> &sstable_files)
+void checkAndCompactSSTables(
+    std::vector<std::string> &sstable_files,
+    std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
 {
-    // tc: O(N+klogk)
-    if (sstable_files.size() < 4)
-    {
+    if (sstable_files.size() < 8)
         return;
-    }
-    std::vector<std::string> target_files(sstable_files.begin(), sstable_files.begin() + 4);
+
+    std::vector<std::string> target_files(
+        sstable_files.begin(),
+        sstable_files.begin() + 8);
+
     std::unordered_map<std::string, std::pair<std::string, uint8_t>> MergedRecord;
 
     for (const auto &filename : target_files)
     {
         std::ifstream file(filename, std::ios::binary);
+
         if (!file.is_open())
-            continue;
-        auto index_block = readIndexBlock(file);
-        for (auto &entry : index_block)
+            return;
+
+        auto it = index_cache.find(filename);
+
+        // If index is not cached, load it from disk and cache it.
+        if (it == index_cache.end())
+        {
+            index_cache[filename] = readIndexBlock(file);
+            it = index_cache.find(filename);
+        }
+
+        const auto &index_block = it->second;
+
+        for (const auto &entry : index_block)
         {
             file.seekg(entry.file_offset);
-            RecordHeader header;
-            file.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
+
+            RecordHeader header{};
+
+            file.read(
+                reinterpret_cast<char *>(&header),
+                sizeof(RecordHeader));
+
             file.seekg(header.keySize, std::ios::cur);
+
             std::string value(header.valueSize, '\0');
+
             if (header.valueSize > 0)
-            {
                 file.read(&value[0], header.valueSize);
-            }
-            MergedRecord[entry.key] = {value, header.is_tombstone};
+
+            MergedRecord[entry.key] = {
+                value,
+                header.is_tombstone
+            };
         }
-        file.close();
     }
-    // 3. Garbage Collection / Tombstone Check & Vector Conversion
+
     std::vector<std::pair<std::string, std::string>> sorted_records;
     sorted_records.reserve(MergedRecord.size());
-    for (auto &[key, data] : MergedRecord)
+
+    for (const auto &[key, data] : MergedRecord)
     {
         if (data.second == 0)
-        {
             sorted_records.push_back({key, data.first});
-        }
     }
 
     std::sort(sorted_records.begin(), sorted_records.end());
 
     std::string sst_filename = generateSStable();
+
     std::vector<IndexEntry> index_block;
-    for (int i = 0; i < sorted_records.size(); i++)
+    index_block.reserve(sorted_records.size());
+
+    for (const auto &[key, value] : sorted_records)
     {
-        // writeRecord because all tombstone updated or deleted
-        uint64_t offset = writeRecord(sst_filename, sorted_records[i].first, sorted_records[i].second);
-        index_block.push_back({sorted_records[i].first, offset});
+        uint64_t offset = writeRecord(
+            sst_filename,
+            key,
+            value);
+
+        index_block.push_back({key, offset});
     }
-    std::ofstream sst_outfile(sst_filename, std::ios::binary | std::ios::app);
-    if (sst_outfile.is_open())
-    {
-        writeIndexBlock(sst_outfile, index_block);
-        sst_outfile.close();
-    }
-    // safe atomic replacement
+
+    std::ofstream sst_outfile(
+        sst_filename,
+        std::ios::binary | std::ios::app);
+
+    if (!sst_outfile.is_open())
+        return;
+
+    writeIndexBlock(sst_outfile, index_block);
+
+    // Cache the new SSTable index.
+    index_cache[sst_filename] = std::move(index_block);
+
+    sst_outfile.close();
+
+    // Remove old SSTables and their cache entries.
     for (const auto &filename : target_files)
     {
         std::remove(filename.c_str());
-        // Find and remove safely from sstable_files vector
-        auto it = std::find(sstable_files.begin(), sstable_files.end(), filename);
-        if (it != sstable_files.end())
-        {
-            sstable_files.erase(it);
-        }
+        index_cache.erase(filename);
     }
 
-    // Add the new compacted file to the engine
-    sstable_files.push_back(sst_filename);
+    // Remove the first 8 old SSTables.
+    sstable_files.erase(
+        sstable_files.begin(),
+        sstable_files.begin() + 8);
+
+    // Compacted SSTable represents the old range,
+    // so keep it before newer SSTables.
+    sstable_files.insert(
+        sstable_files.begin(),
+        sst_filename);
 }

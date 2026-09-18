@@ -1,6 +1,8 @@
 #include "../include/sstable.h"
-#include "./binary_storage.h"
+#include "../include/binary_storage.h"
 #include <iostream>
+#include <algorithm>
+#include <ctime>
 
 static int sst_counter = 0;
 
@@ -100,7 +102,7 @@ std::pair<std::string, uint8_t> readSStable(std::string &key, std::unordered_map
     return {value, header.is_tombstone};
 }
 
-void writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string, uint64_t> &flushing_map, std::vector<std::string> &sstable_files)
+void writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string, uint64_t> &flushing_map, std::vector<std::string> &sstable_files,std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
 {
     // 1. Generate a unique SSTable filename (e.g., using current timestamp or a counter)
     std::string sst_filename = generateSStable();
@@ -118,12 +120,13 @@ void writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string
     if (sst_outfile.is_open())
     {
         writeIndexBlock(sst_outfile, index_block);
+        index_cache[sst_filename] = std::move(index_block);
         sst_outfile.close();
     }
     flushing_map.clear();
 }
 
-std::string getSStable(std::vector<std::string> &sstable_files, const std::string &key)
+std::string getSStable(std::vector<std::string> &sstable_files, const std::string &key,std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
 {
     // 1. Loop through SSTable files from newest to oldest
     for (int i = sstable_files.size() - 1; i >= 0; i--)
@@ -131,7 +134,14 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
         std::ifstream file(sstable_files[i], std::ios::binary);
         if (!file.is_open())
             continue;
-        auto index_block = readIndexBlock(file);
+        auto it = index_cache.find(sstable_files[i]);
+
+        if (it == index_cache.end()) {
+            // cache missing
+            continue;
+        }
+
+        const auto& index_block = it->second;
 
         // 6. Run Binary Search on the index_block vector
         int low = 0;

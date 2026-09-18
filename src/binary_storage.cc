@@ -27,7 +27,7 @@ uint64_t writeTombstoneRecord(const std::string &filename, const std::string &ke
 
     uint64_t offset = outfile.tellp();
 
-    RecordHeader header;
+    RecordHeader header{};
     header.is_tombstone = 1; // Mark as tombstone
     header.keySize = static_cast<uint32_t>(key.size());
     header.valueSize = 0;    // Deletions have no value payload

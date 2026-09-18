@@ -15,6 +15,7 @@ private:
     std::unordered_map<std::string, uint64_t> memtable;
     std::unordered_map<std::string, uint64_t> flushing_map;
     std::vector<std::string> sstable_files;
+    std::unordered_map<std::string, std::vector<IndexEntry>> index_cache;
     void flush();
 
 public:
