@@ -3,12 +3,12 @@
 #include <iostream>
 #include <algorithm>
 
-void checkAndCompactSSTables(
+CompactionResult checkAndCompactSSTables(
     std::vector<std::string> &sstable_files,
     std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
 {
     if (sstable_files.size() < 8)
-        return;
+        return {false, "", {}, {}};
 
     std::vector<std::string> target_files(
         sstable_files.begin(),
@@ -21,15 +21,13 @@ void checkAndCompactSSTables(
         std::ifstream file(filename, std::ios::binary);
 
         if (!file.is_open())
-            return;
+            return {false, "", {}, {}};
 
         auto it = index_cache.find(filename);
 
-        // If index is not cached, load it from disk and cache it.
         if (it == index_cache.end())
         {
-            index_cache[filename] = readIndexBlock(file);
-            it = index_cache.find(filename);
+            return {false, "", {}, {}};
         }
 
         const auto &index_block = it->second;
@@ -53,8 +51,7 @@ void checkAndCompactSSTables(
 
             MergedRecord[entry.key] = {
                 value,
-                header.is_tombstone
-            };
+                header.is_tombstone};
         }
     }
 
@@ -89,30 +86,11 @@ void checkAndCompactSSTables(
         std::ios::binary | std::ios::app);
 
     if (!sst_outfile.is_open())
-        return;
+        return {false, "", {}, {}};
 
     writeIndexBlock(sst_outfile, index_block);
 
-    // Cache the new SSTable index.
-    index_cache[sst_filename] = std::move(index_block);
-
     sst_outfile.close();
 
-    // Remove old SSTables and their cache entries.
-    for (const auto &filename : target_files)
-    {
-        std::remove(filename.c_str());
-        index_cache.erase(filename);
-    }
-
-    // Remove the first 8 old SSTables.
-    sstable_files.erase(
-        sstable_files.begin(),
-        sstable_files.begin() + 8);
-
-    // Compacted SSTable represents the old range,
-    // so keep it before newer SSTables.
-    sstable_files.insert(
-        sstable_files.begin(),
-        sst_filename);
+    return {true,std::move(sst_filename) , std::move(index_block), std::move(target_files)};
 }

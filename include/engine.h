@@ -7,19 +7,31 @@
 #include "binary_storage.h"
 #include "binary_record.h"
 #include "sstable.h"
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include<queue>
+#include <shared_mutex>
 
 class TusuEngine
 {
 private:
     std::string db_file;
     std::unordered_map<std::string, uint64_t> memtable;
-    std::unordered_map<std::string, uint64_t> flushing_map;
+    std::queue<std::unordered_map<std::string,uint64_t>> flush_queue;
     std::vector<std::string> sstable_files;
     std::unordered_map<std::string, std::vector<IndexEntry>> index_cache;
-    void flush();
+    void flush(std::unordered_map<std::string, uint64_t> &batch);
+    std::thread flush_thread;
+    std::mutex mtx;//flush_queue
+    std::condition_variable flush_cv;
+    bool shutting_down = false;
+    void flushWorker();
+    std::shared_mutex sstable_mtx; //sstable+indexcache
 
 public:
     TusuEngine(const std::string &filename);
+    ~TusuEngine();
     void put(const std::string &key, const std::string &value);
     void remove(const std::string &key);
     std::string get(const std::string &key);
