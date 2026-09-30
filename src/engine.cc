@@ -67,7 +67,7 @@ TusuEngine::~TusuEngine()
     flush_thread.join();
 }
 
-void TusuEngine::flush(std::unordered_map<std::string, uint64_t> &batch)
+void TusuEngine::flush(Batch &batch)
 {
     std::vector<std::string> sorted_keys;
     sorted_keys.reserve(batch.size());
@@ -124,10 +124,14 @@ void TusuEngine::flushWorker()
             if (shutting_down && flush_queue.empty())
                 return;
 
-            batch = std::move(flush_queue.front());
-            flush_queue.pop();
+            flushing_batch = std::move(flush_queue.front());
+            flush_queue.pop_front();
         }
-        flush(batch);
+        flush(*flushing_batch);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            flushing_batch.reset();
+        }
     }
 }
 
@@ -140,7 +144,7 @@ void TusuEngine::put(const std::string &key, const std::string &value)
         {
             std::lock_guard<std::mutex> lock(mtx);
 
-            flush_queue.push(std::move(memtable));
+            flush_queue.push_back(std::move(memtable));
             memtable.clear();
         }
 
@@ -158,7 +162,7 @@ void TusuEngine::remove(const std::string &key)
         {
             std::lock_guard<std::mutex> lock(mtx);
 
-            flush_queue.push(std::move(memtable));
+            flush_queue.push_back(std::move(memtable));
             memtable.clear();
         }
 
@@ -171,6 +175,59 @@ std::string TusuEngine::get(const std::string &key)
     if (memtable.find(key) != memtable.end())
     {
         uint64_t offset = memtable[key];
+        std::ifstream infile(db_file, std::ios::binary);
+        if (!infile.is_open())
+            return "FILE ERROR";
+
+        infile.seekg(offset);
+        RecordHeader header;
+        infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
+        if (header.is_tombstone != 1)
+        {
+            infile.seekg(header.keySize, std::ios::cur);
+
+            std::string value(header.valueSize, '\0');
+            infile.read(&value[0], header.valueSize);
+            return value;
+        }
+
+        return "NOT FOUND";
+    }
+
+    uint64_t offset;
+    bool found = false;
+
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+
+        for (auto it = flush_queue.rbegin();
+             it != flush_queue.rend();
+             ++it)
+        {
+            auto batch_it = it->find(key);
+
+            if (batch_it != it->end())
+            {
+                offset = batch_it->second;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found && flushing_batch)
+        {
+            auto it = flushing_batch->find(key);
+
+            if (it != flushing_batch->end())
+            {
+                offset = it->second;
+                found = true;
+            }
+        }
+    }
+
+    if (found)
+    {
         std::ifstream infile(db_file, std::ios::binary);
         if (!infile.is_open())
             return "FILE ERROR";

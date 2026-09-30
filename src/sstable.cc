@@ -120,7 +120,6 @@ SSTableResult writeSStable(std::vector<std::string> &keys, std::unordered_map<st
         writeIndexBlock(sst_outfile, index_block);
         sst_outfile.close();
     }
-    flushing_map.clear();
     return {sst_filename, std::move(index_block)};
 }
 
