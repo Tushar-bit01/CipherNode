@@ -129,9 +129,6 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
     int size=sstable_files.size();
     for (int i = size - 1; i >= 0; i--)
     {
-        std::ifstream file(sstable_files[i], std::ios::binary);
-        if (!file.is_open())
-            continue;
         auto it = index_cache.find(sstable_files[i]);
 
         if (it == index_cache.end()) {
@@ -169,6 +166,9 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
         // 7. If found via binary search, jump to the record and read the value!
         if (found)
         {
+            std::ifstream file(sstable_files[i], std::ios::binary);
+            if (!file.is_open())
+                continue;
             file.seekg(found_offset);
             RecordHeader header;
             file.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
@@ -186,7 +186,6 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
             return value;
         }
 
-        file.close();
     }
 
     return "NOT FOUND";

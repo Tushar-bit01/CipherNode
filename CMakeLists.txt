@@ -23,3 +23,7 @@ add_executable(bench
     tests/bench.cc
     ${ENGINE_SOURCES}
 )
+add_executable(bench_get
+    tests/bench_get.cc
+    ${ENGINE_SOURCES}
+)
