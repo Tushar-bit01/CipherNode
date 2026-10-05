@@ -102,41 +102,49 @@ std::pair<std::string, uint8_t> readSStable(std::string &key, std::unordered_map
     return {value, header.is_tombstone};
 }
 
-SSTableResult writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string, uint64_t> &flushing_map)
+SSTable writeSStable(std::vector<std::string> &keys, std::unordered_map<std::string, uint64_t> &flushing_map)
 {
-    std::string sst_filename = generateSStable();
+    SSTable sst;
+    sst.filename = generateSStable();
     std::vector<IndexEntry> index_block;
     for (int i = 0; i < keys.size(); i++)
     {
         auto record = readSStable(keys[i], flushing_map);
         if (record.first == "data not found" || record.first == "WAL file not found")
             continue;
-        uint64_t record_offset = writeSStableRecord(sst_filename, keys[i], record.first, record.second);
+        uint64_t record_offset = writeSStableRecord(sst.filename, keys[i], record.first, record.second);
         index_block.push_back({keys[i], record_offset});
     }
-    std::ofstream sst_outfile(sst_filename, std::ios::binary | std::ios::app);
+    std::ofstream sst_outfile(sst.filename, std::ios::binary | std::ios::app);
     if (sst_outfile.is_open())
     {
         writeIndexBlock(sst_outfile, index_block);
         sst_outfile.close();
     }
-    return {sst_filename, std::move(index_block)};
+    sst.index = std::move(index_block);
+    int fd = open(sst.filename.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+        std::cerr << "Failed to open SSTable: "
+                  << sst.filename << '\n';
+    }
+    else
+    {
+        sst.fd = fd;
+    }
+    return sst;
 }
 
-std::string getSStable(std::vector<std::string> &sstable_files, const std::string &key,std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
+std::string getSStable(
+    std::vector<SSTable> &sstables,
+    const std::string &key)
 {
     // 1. Loop through SSTable files from newest to oldest
-    int size=sstable_files.size();
+    int size = sstables.size();
     for (int i = size - 1; i >= 0; i--)
     {
-        auto it = index_cache.find(sstable_files[i]);
-
-        if (it == index_cache.end()) {
-            // cache missing
-            continue;
-        }
-
-        const auto& index_block = it->second;
+        const auto &sst = sstables[i];
+        const auto &index_block = sst.index;
 
         // 6. Run Binary Search on the index_block vector
         int low = 0;
@@ -166,26 +174,34 @@ std::string getSStable(std::vector<std::string> &sstable_files, const std::strin
         // 7. If found via binary search, jump to the record and read the value!
         if (found)
         {
-            std::ifstream file(sstable_files[i], std::ios::binary);
-            if (!file.is_open())
+            RecordHeader header{};
+            //read from found offset to only keysize valuesize to actually read value and key data 
+            //we have to add found_offset+sizeof(RecordHeader)+header.keySize to read value data or just recordheader to read key
+            ssize_t bytes_read = pread(
+                sst.fd,
+                &header,
+                sizeof(RecordHeader),
+                found_offset);
+
+            if (bytes_read != sizeof(RecordHeader))
                 continue;
-            file.seekg(found_offset);
-            RecordHeader header;
-            file.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
+
             if (header.is_tombstone == 1)
-            {
                 return "NOT FOUND";
-            }
-            // Skip past the key to reach the value
-            file.seekg(header.keySize, std::ios::cur);
 
             std::string value(header.valueSize, '\0');
-            file.read(&value[0], header.valueSize);
 
-            file.close();
+            bytes_read = pread(
+                sst.fd,
+                value.data(),
+                header.valueSize,
+                found_offset + sizeof(RecordHeader) + header.keySize);
+
+            if (bytes_read != header.valueSize)
+                continue;
+
             return value;
         }
-
     }
 
     return "NOT FOUND";

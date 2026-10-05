@@ -42,16 +42,37 @@ TusuEngine::TusuEngine(const std::string &filename) : db_file(filename)
         if (filename.rfind("sstable_", 0) == 0 &&
             entry.path().extension() == ".db")
         {
-            sstable_files.push_back(filename);
-            std::ifstream file(filename, std::ios::binary);
-
-            if (file.is_open())
+            int fd = open(filename.c_str(), O_RDONLY);
+            if (fd != -1)
             {
-                index_cache[filename] = readIndexBlock(file);
+                std::ifstream file(filename, std::ios::binary);
+                if (file.is_open())
+                {
+                    SSTable sst;
+                    sst.filename = filename;
+                    sst.fd = fd;
+                    sst.index = readIndexBlock(file);
+                    sstables.push_back(std::move(sst));
+                }
+                else
+                {
+                    close(fd);
+                }
             }
+            // sstable_files.push_back(filename);
+            // std::ifstream file(filename, std::ios::binary);
+
+            // if (file.is_open())
+            // {
+            //     index_cache[filename] = readIndexBlock(file);
+            // }
         }
     }
-    std::sort(sstable_files.begin(), sstable_files.end());
+    std::sort(sstables.begin(), sstables.end(),
+              [](const SSTable &a, const SSTable &b)
+              {
+                  return a.filename < b.filename;
+              });
 
     flush_thread = std::thread(&TusuEngine::flushWorker, this);
 }
@@ -65,6 +86,11 @@ TusuEngine::~TusuEngine()
 
     flush_cv.notify_one();
     flush_thread.join();
+    for (auto &sst : sstables)
+    {
+        if (sst.fd != -1)
+            close(sst.fd);
+    }
 }
 
 void TusuEngine::flush(Batch &batch)
@@ -76,36 +102,35 @@ void TusuEngine::flush(Batch &batch)
         sorted_keys.push_back(pair.first);
     }
     std::sort(sorted_keys.begin(), sorted_keys.end());
-    SSTableResult result = writeSStable(sorted_keys, batch);
+    SSTable sst = writeSStable(sorted_keys, batch);
 
     {
         std::unique_lock lock(sstable_mtx);
 
-        sstable_files.push_back(result.filename);
-        index_cache[result.filename] = std::move(result.index);
+        sstables.push_back(std::move(sst));
     }
-    CompactionResult compacted = checkAndCompactSSTables(sstable_files, index_cache);
+
+    CompactionResult compacted = checkAndCompactSSTables(sstables);
     if (compacted.compacted)
     {
         std::unique_lock lock(sstable_mtx);
-        // Remove old SSTables and their cache entries.
-        for (const auto &filename : compacted.old_files)
+        // Remove old SSTables
+        for (size_t i = 0; i < 8; ++i)
         {
-            std::remove(filename.c_str());
-            index_cache.erase(filename);
+            auto &sst = sstables[i];
+            close(sst.fd);
+            std::remove(sst.filename.c_str());
         }
 
         // Remove the first 8 old SSTables.
-        sstable_files.erase(
-            sstable_files.begin(),
-            sstable_files.begin() + compacted.old_files.size());
-
-        index_cache[compacted.filename] = std::move(compacted.index);
+        sstables.erase(
+            sstables.begin(),
+            sstables.begin() + 8);
         // Compacted SSTable represents the old range,
         // so keep it before newer SSTables.
-        sstable_files.insert(
-            sstable_files.begin(),
-            compacted.filename);
+        sstables.insert(
+            sstables.begin(),
+            std::move(compacted.new_sstable));
     }
 }
 
@@ -249,7 +274,7 @@ std::string TusuEngine::get(const std::string &key)
 
     // 2. Fall back to SSTables (disk search path)
     std::shared_lock lock(sstable_mtx);
-    std::string sst_result = getSStable(sstable_files, key, index_cache);
+    std::string sst_result = getSStable(sstables, key);
     if (sst_result != "NOT FOUND")
     {
         return sst_result;

@@ -13,6 +13,8 @@
 #include <deque>
 #include <optional>
 #include <shared_mutex>
+#include <fcntl.h>
+#include <unistd.h>
 
 class TusuEngine
 {
@@ -23,15 +25,14 @@ private:
 
     std::deque<Batch> flush_queue;
     std::optional<Batch> flushing_batch;
-    std::vector<std::string> sstable_files;
-    std::unordered_map<std::string, std::vector<IndexEntry>> index_cache;
+    std::vector<SSTable> sstables;
     void flush(std::unordered_map<std::string, uint64_t> &batch);
     std::thread flush_thread;
-    std::mutex mtx; // flush_queue
+    std::mutex mtx;//flush_queue
     std::condition_variable flush_cv;
     bool shutting_down = false;
     void flushWorker();
-    std::shared_mutex sstable_mtx; // sstable+indexcache
+    std::shared_mutex sstable_mtx; //sstable+indexcache
 
 public:
     TusuEngine(const std::string &filename);

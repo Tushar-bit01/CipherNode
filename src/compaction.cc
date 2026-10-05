@@ -3,34 +3,23 @@
 #include <iostream>
 #include <algorithm>
 
-CompactionResult checkAndCompactSSTables(
-    std::vector<std::string> &sstable_files,
-    std::unordered_map<std::string, std::vector<IndexEntry>> &index_cache)
+CompactionResult checkAndCompactSSTables(std::vector<SSTable> &sstables)
 {
-    if (sstable_files.size() < 8)
-        return {false, "", {}, {}};
+    if (sstables.size() < 8)
+        return {false, {}};
 
-    std::vector<std::string> target_files(
-        sstable_files.begin(),
-        sstable_files.begin() + 8);
 
     std::unordered_map<std::string, std::pair<std::string, uint8_t>> MergedRecord;
 
-    for (const auto &filename : target_files)
+    for (size_t i = 0; i < 8; ++i)
     {
-        std::ifstream file(filename, std::ios::binary);
+        const auto &sst = sstables[i];
+        std::ifstream file(sst.filename, std::ios::binary);
 
         if (!file.is_open())
-            return {false, "", {}, {}};
+            return {false, {}};
 
-        auto it = index_cache.find(filename);
-
-        if (it == index_cache.end())
-        {
-            return {false, "", {}, {}};
-        }
-
-        const auto &index_block = it->second;
+        const auto &index_block = sst.index;
 
         for (const auto &entry : index_block)
         {
@@ -65,32 +54,40 @@ CompactionResult checkAndCompactSSTables(
     }
 
     std::sort(sorted_records.begin(), sorted_records.end());
-
-    std::string sst_filename = generateSStable();
-
-    std::vector<IndexEntry> index_block;
-    index_block.reserve(sorted_records.size());
+    SSTable sst{};
+    sst.filename = generateSStable();
 
     for (const auto &[key, value] : sorted_records)
     {
         uint64_t offset = writeRecord(
-            sst_filename,
+            sst.filename,
             key,
             value);
 
-        index_block.push_back({key, offset});
+        sst.index.push_back({key, offset});
     }
 
     std::ofstream sst_outfile(
-        sst_filename,
+        sst.filename,
         std::ios::binary | std::ios::app);
 
     if (!sst_outfile.is_open())
-        return {false, "", {}, {}};
+        return {false, {}};
 
-    writeIndexBlock(sst_outfile, index_block);
+    writeIndexBlock(sst_outfile, sst.index);
 
     sst_outfile.close();
 
-    return {true,std::move(sst_filename) , std::move(index_block), std::move(target_files)};
+    int fd = open(sst.filename.c_str(), O_RDONLY);
+
+    if (fd == -1)
+    {
+        std::cerr << "Failed to open compacted SSTable: "
+                  << sst.filename << '\n';
+
+        return {false, {}};
+    }
+    sst.fd=fd;
+
+    return {true, std::move(sst)};
 }
