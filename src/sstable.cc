@@ -135,6 +135,40 @@ SSTable writeSStable(std::vector<std::string> &keys, std::unordered_map<std::str
     return sst;
 }
 
+std::string readRecord(int fd, uint64_t offset)
+{
+    RecordHeader header{};
+    //read from found offset to only keysize valuesize to actually read value and key data 
+    //we have to add found_offset+sizeof(RecordHeader)+header.keySize to read value data or just recordheader to read key
+    ssize_t bytes_read = pread(
+        fd,
+        &header,
+        sizeof(RecordHeader),
+        offset);
+
+    if (bytes_read != sizeof(RecordHeader))
+        return "FILE ERROR";
+
+    if (header.is_tombstone == 1)
+        return "NOT FOUND";
+
+    uint64_t value_offset =
+        offset + sizeof(RecordHeader) + header.keySize;
+
+    std::string value(header.valueSize, '\0');
+
+    bytes_read = pread(
+        fd,
+        value.data(),
+        header.valueSize,
+        value_offset);
+
+    if (bytes_read != header.valueSize)
+        return "FILE ERROR";
+
+    return value;
+}
+
 std::string getSStable(
     std::vector<SSTable> &sstables,
     const std::string &key)
@@ -174,33 +208,7 @@ std::string getSStable(
         // 7. If found via binary search, jump to the record and read the value!
         if (found)
         {
-            RecordHeader header{};
-            //read from found offset to only keysize valuesize to actually read value and key data 
-            //we have to add found_offset+sizeof(RecordHeader)+header.keySize to read value data or just recordheader to read key
-            ssize_t bytes_read = pread(
-                sst.fd,
-                &header,
-                sizeof(RecordHeader),
-                found_offset);
-
-            if (bytes_read != sizeof(RecordHeader))
-                continue;
-
-            if (header.is_tombstone == 1)
-                return "NOT FOUND";
-
-            std::string value(header.valueSize, '\0');
-
-            bytes_read = pread(
-                sst.fd,
-                value.data(),
-                header.valueSize,
-                found_offset + sizeof(RecordHeader) + header.keySize);
-
-            if (bytes_read != header.valueSize)
-                continue;
-
-            return value;
+            return readRecord(sst.fd, found_offset);
         }
     }
 

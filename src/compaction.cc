@@ -8,7 +8,6 @@ CompactionResult checkAndCompactSSTables(std::vector<SSTable> &sstables)
     if (sstables.size() < 8)
         return {false, {}};
 
-
     std::unordered_map<std::string, std::pair<std::string, uint8_t>> MergedRecord;
 
     for (size_t i = 0; i < 8; ++i)
@@ -57,15 +56,31 @@ CompactionResult checkAndCompactSSTables(std::vector<SSTable> &sstables)
     SSTable sst{};
     sst.filename = generateSStable();
 
+    // Temporary WRITE fd
+    int write_fd = open(
+        sst.filename.c_str(),
+        O_WRONLY | O_APPEND | O_CREAT,
+        0644);
+
+    if (write_fd == -1)
+    {
+        std::cerr << "Failed to create compacted SSTable: "
+                  << sst.filename << '\n';
+
+        return {false, {}};
+    }
+
     for (const auto &[key, value] : sorted_records)
     {
         uint64_t offset = writeRecord(
-            sst.filename,
+            write_fd,
             key,
             value);
 
         sst.index.push_back({key, offset});
     }
+
+    close(write_fd);
 
     std::ofstream sst_outfile(
         sst.filename,
@@ -87,7 +102,7 @@ CompactionResult checkAndCompactSSTables(std::vector<SSTable> &sstables)
 
         return {false, {}};
     }
-    sst.fd=fd;
+    sst.fd = fd;
 
     return {true, std::move(sst)};
 }

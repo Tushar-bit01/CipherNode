@@ -34,6 +34,23 @@ TusuEngine::TusuEngine(const std::string &filename) : db_file(filename)
         }
     }
 
+    wal_fd = open(db_file.c_str(), O_RDONLY | O_CREAT, 0644);
+    if (wal_fd == -1)
+    {
+        throw std::runtime_error("Failed to open WAL for reading");
+    }
+
+    wal_write_fd = open(
+        db_file.c_str(),
+        O_WRONLY | O_APPEND | O_CREAT,
+        0644);
+
+    if (wal_write_fd == -1)
+    {
+        close(wal_fd);
+        throw std::runtime_error("Failed to open WAL for writing");
+    }
+
     // Discover existing SSTables
     for (const auto &entry : std::filesystem::directory_iterator("."))
     {
@@ -59,13 +76,6 @@ TusuEngine::TusuEngine(const std::string &filename) : db_file(filename)
                     close(fd);
                 }
             }
-            // sstable_files.push_back(filename);
-            // std::ifstream file(filename, std::ios::binary);
-
-            // if (file.is_open())
-            // {
-            //     index_cache[filename] = readIndexBlock(file);
-            // }
         }
     }
     std::sort(sstables.begin(), sstables.end(),
@@ -91,6 +101,8 @@ TusuEngine::~TusuEngine()
         if (sst.fd != -1)
             close(sst.fd);
     }
+    close(wal_fd);
+    close(wal_write_fd);
 }
 
 void TusuEngine::flush(Batch &batch)
@@ -162,7 +174,7 @@ void TusuEngine::flushWorker()
 
 void TusuEngine::put(const std::string &key, const std::string &value)
 {
-    uint64_t offset = writeRecord(db_file, key, value);
+    uint64_t offset = writeRecord(wal_write_fd, key, value);
     memtable[key] = offset;
     if (memtable.size() >= 10000)
     {
@@ -179,7 +191,7 @@ void TusuEngine::put(const std::string &key, const std::string &value)
 
 void TusuEngine::remove(const std::string &key)
 {
-    uint64_t offset = writeTombstoneRecord(db_file, key);
+    uint64_t offset = writeTombstoneRecord(wal_write_fd, key);
     memtable[key] = offset;
 
     if (memtable.size() >= 10000)
@@ -200,23 +212,7 @@ std::string TusuEngine::get(const std::string &key)
     if (memtable.find(key) != memtable.end())
     {
         uint64_t offset = memtable[key];
-        std::ifstream infile(db_file, std::ios::binary);
-        if (!infile.is_open())
-            return "FILE ERROR";
-
-        infile.seekg(offset);
-        RecordHeader header;
-        infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
-        if (header.is_tombstone != 1)
-        {
-            infile.seekg(header.keySize, std::ios::cur);
-
-            std::string value(header.valueSize, '\0');
-            infile.read(&value[0], header.valueSize);
-            return value;
-        }
-
-        return "NOT FOUND";
+        return readRecord(wal_fd, offset);
     }
 
     uint64_t offset;
@@ -253,23 +249,7 @@ std::string TusuEngine::get(const std::string &key)
 
     if (found)
     {
-        std::ifstream infile(db_file, std::ios::binary);
-        if (!infile.is_open())
-            return "FILE ERROR";
-
-        infile.seekg(offset);
-        RecordHeader header;
-        infile.read(reinterpret_cast<char *>(&header), sizeof(RecordHeader));
-        if (header.is_tombstone != 1)
-        {
-            infile.seekg(header.keySize, std::ios::cur);
-
-            std::string value(header.valueSize, '\0');
-            infile.read(&value[0], header.valueSize);
-            return value;
-        }
-
-        return "NOT FOUND";
+        return readRecord(wal_fd, offset);
     }
 
     // 2. Fall back to SSTables (disk search path)

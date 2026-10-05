@@ -860,7 +860,7 @@ int main()
     // ========================================================
 
     writeCSV(
-        "benchmark_results/baseline_v2.1.csv",
+        "benchmark_results/baseline_v2.2.csv",
         all_results);
 
     cleanDatabase();
@@ -869,7 +869,7 @@ int main()
         << "\n=============================================\n"
         << "Benchmark complete.\n"
         << "Results saved to:\n"
-        << "benchmark_results/baseline_v2.1.csv\n"
+        << "benchmark_results/baseline_v2.2.csv\n"
         << "=============================================\n";
 
     return 0;

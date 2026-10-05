@@ -19,6 +19,8 @@
 class TusuEngine
 {
 private:
+    int wal_fd = -1;
+    int wal_write_fd = -1; 
     std::string db_file;
     std::unordered_map<std::string, uint64_t> memtable;
     using Batch = std::unordered_map<std::string, uint64_t>;

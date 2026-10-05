@@ -39,5 +39,6 @@ std::string getSStable(
     std::vector<SSTable> &sstables,
     const std::string &key);
 CompactionResult checkAndCompactSSTables(std::vector<SSTable> &sstables);
+std::string readRecord(int fd, uint64_t offset);
 
 #endif
